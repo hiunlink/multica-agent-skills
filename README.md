@@ -3,27 +3,33 @@
 Multica-first planning and execution skills for coding agents.
 
 This collection builds on Matt Pocock's Wayfinder workflow and adapts its issue
-tracker contract to Multica. It separates four kinds of work:
+tracker contract to Multica. Its workflow starts with the smallest useful route:
 
+- `agent-task-intake`: route ambiguous, risky, or long-running work.
 - `issue-workspace`: preserve one small unresolved discussion.
 - `wayfinder`: map and resolve a multi-session field of decisions.
 - `to-spec`: synthesize settled decisions into a durable spec.
 - `to-tickets`: produce executable vertical slices with explicit blockers and
   execution contracts.
+- `handoff`: transfer live context to another agent or fresh session.
 
 ## Install
 
-Install all skills:
+Install all skills for OpenCode:
 
 ```bash
-npx skills add hiunlink/multica-agent-skills --all
+npx skills add hiunlink/multica-agent-skills \
+  --skill '*' --agent opencode --copy --yes
 ```
+
+Add `--global` to install at user scope rather than in the current project.
 
 Install only the core workflow:
 
 ```bash
 npx skills add hiunlink/multica-agent-skills \
-  --skill setup-multica-skills issue-workspace wayfinder to-spec to-tickets \
+  --skill agent-task-intake setup-multica-skills issue-workspace wayfinder \
+  to-spec to-tickets handoff \
   --agent opencode --copy --yes
 ```
 

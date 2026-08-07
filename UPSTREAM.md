@@ -12,6 +12,8 @@ The initial import was selected from `mattpocock/skills` at commit
 | `prototype` | Track upstream unless local interoperability requires a change. |
 | `to-spec` | Preserve Multica publication semantics: specs are unassigned planning artifacts. |
 | `to-tickets` | Preserve the Multica worktree gate, assignment safety, and execution contract. |
+| `handoff` | Derived from upstream; preserve temporary-file, reference-first, and redaction behavior. |
+| `agent-task-intake` | Original workflow router maintained in this repository. |
 
 ## Updating
 
