@@ -1,6 +1,6 @@
 # Multica Agent Skills
 
-Multica-first planning and execution skills for coding agents.
+Multica-first planning skills and an OpenCode task-steward agent.
 
 This collection builds on Matt Pocock's Wayfinder workflow and adapts its issue
 tracker contract to Multica. Its workflow starts with the smallest useful route:
@@ -36,6 +36,27 @@ npx skills add hiunlink/multica-agent-skills \
 ```
 
 Restart the agent runtime after installation so it reloads skill definitions.
+
+## OpenCode Agent
+
+The repository also owns a generic `Multica Task Steward` primary agent for
+reviewing and advancing existing implementation issues without editing product
+code.
+
+From a clone of this repository, install or update it with:
+
+```bash
+./scripts/install-opencode-agent.sh
+```
+
+The script installs to
+`~/.config/opencode/agents/multica-task-steward.md`, or honors
+`$XDG_CONFIG_HOME`. When the target differs, it creates a timestamped backup
+before replacement. Restart OpenCode after installation.
+
+Repository-specific language, issue-key, Git-host, validation, and architecture
+rules come from the consuming project's `AGENTS.md`, `docs/agents/*`, and project
+context skill rather than from the global agent definition.
 
 ## Setup
 
