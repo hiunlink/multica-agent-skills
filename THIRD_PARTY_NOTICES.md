@@ -1,7 +1,8 @@
 # Third-Party Notices
 
 Substantial portions of the `wayfinder`, `to-spec`, `to-tickets`, `grilling`,
-`domain-modeling`, `research`, `prototype`, and `handoff` skills are derived from
+`domain-modeling`, `research`, `prototype`, `handoff`, `codebase-design`, and
+`improve-codebase-architecture` skills are derived from
 [`mattpocock/skills`](https://github.com/mattpocock/skills).
 
 ```text

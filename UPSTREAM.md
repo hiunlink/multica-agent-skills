@@ -14,6 +14,8 @@ The initial import was selected from `mattpocock/skills` at commit
 | `to-tickets` | Preserve the Multica worktree gate, assignment safety, and execution contract. |
 | `handoff` | Derived from upstream; preserve temporary-file, reference-first, and redaction behavior. |
 | `agent-task-intake` | Original workflow router maintained in this repository. |
+| `codebase-design` | Track upstream as the architecture vocabulary and interface-design dependency. |
+| `improve-codebase-architecture` | Track upstream while preserving explicit `grilling`, `domain-modeling`, and `codebase-design` composition. |
 
 ## Updating
 

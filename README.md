@@ -12,6 +12,8 @@ tracker contract to Multica. Its workflow starts with the smallest useful route:
 - `to-tickets`: produce executable vertical slices with explicit blockers and
   execution contracts.
 - `handoff`: transfer live context to another agent or fresh session.
+- `improve-codebase-architecture`: find deepening opportunities and resolve a
+  selected candidate with `codebase-design`, `grilling`, and `domain-modeling`.
 
 ## Install
 
@@ -46,6 +48,19 @@ The setup expects:
 - an authenticated `multica` CLI;
 - a selected Multica workspace;
 - issue labels for Wayfinder maps and ticket types.
+
+## Project-owned configuration
+
+The global skill repository owns templates and setup behavior. Each consuming
+repository owns the generated instances:
+
+- the `## Agent skills` pointer in its `AGENTS.md` or `CLAUDE.md`;
+- `docs/agents/issue-tracker.md` with its workspace and CLI conventions;
+- `docs/agents/domain.md` with its actual glossary and decision sources;
+- any project context skill containing repository-specific paths and rules.
+
+Do not centralize those generated files: another repository may use a different
+Multica workspace, domain layout, language, or architecture baseline.
 
 ## Multica model
 

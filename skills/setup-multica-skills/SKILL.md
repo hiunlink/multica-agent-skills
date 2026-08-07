@@ -8,6 +8,10 @@ disable-model-invocation: true
 
 Configure the repository contracts consumed by this collection.
 
+This global skill owns templates only. The generated `AGENTS.md`/`CLAUDE.md`
+pointer and `docs/agents/*.md` contracts remain owned by the consuming
+repository and must not be shared as universal configuration.
+
 ## Explore
 
 Read the repository before writing:
