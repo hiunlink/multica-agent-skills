@@ -6,11 +6,13 @@ The initial import was selected from `mattpocock/skills` at commit
 | Skill | Local policy |
 | --- | --- |
 | `wayfinder` | Keep its decision-map model close to upstream; delegate tracker semantics to `setup-multica-skills`. |
+| `requirements-wayfinder` | Original optional planning profile maintained here; compose with `wayfinder` without changing its domain-agnostic core. |
 | `grilling` | Track upstream unless local interoperability requires a change. |
 | `domain-modeling` | Track upstream unless local interoperability requires a change. |
 | `research` | Track upstream unless local interoperability requires a change. |
 | `prototype` | Track upstream unless local interoperability requires a change. |
 | `to-spec` | Preserve Multica publication semantics: specs are unassigned planning artifacts. |
+| `requirements-to-spec` | Original requirements-driven synthesis profile maintained here; preserve traceability and continue using the existing `to-tickets`. |
 | `to-tickets` | Preserve the Multica worktree gate, assignment safety, and execution contract. |
 | `handoff` | Derived from upstream; preserve temporary-file, reference-first, and redaction behavior. |
 | `agent-task-intake` | Original workflow router maintained in this repository. |

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Requirements To Spec"
+  short_description: "Preserve user-to-architecture traceability"
+policy:
+  allow_implicit_invocation: false

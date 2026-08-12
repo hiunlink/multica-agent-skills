@@ -1,0 +1,5 @@
+interface:
+  display_name: "Requirements Wayfinder"
+  short_description: "Map product needs into architecture decisions"
+policy:
+  allow_implicit_invocation: false

@@ -8,7 +8,11 @@ tracker contract to Multica. Its workflow starts with the smallest useful route:
 - `agent-task-intake`: route ambiguous, risky, or long-running work.
 - `issue-workspace`: preserve one small unresolved discussion.
 - `wayfinder`: map and resolve a multi-session field of decisions.
+- `requirements-wayfinder`: apply a requirements-driven profile that traces
+  Product Outcomes and User Jobs through Must Use Cases to architecture.
 - `to-spec`: synthesize settled decisions into a durable spec.
+- `requirements-to-spec`: preserve story maps, behavior contracts, required
+  capabilities/data, responsibility placement, and interfaces in a spec.
 - `to-tickets`: produce executable vertical slices with explicit blockers and
   execution contracts.
 - `handoff`: transfer live context to another agent or fresh session.
@@ -31,7 +35,7 @@ Install only the core workflow:
 ```bash
 npx skills add hiunlink/multica-agent-skills \
   --skill agent-task-intake setup-multica-skills issue-workspace wayfinder \
-  to-spec to-tickets handoff \
+  requirements-wayfinder to-spec requirements-to-spec to-tickets handoff \
   --agent opencode --copy --yes
 ```
 
