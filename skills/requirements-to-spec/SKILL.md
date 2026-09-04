@@ -10,7 +10,8 @@ Turn a mature requirements-driven conversation or completed
 `/requirements-wayfinder` map into a durable spec, then publish it to the
 configured tracker as an unassigned planning artifact. This is the
 requirements-driven counterpart to `/to-spec`; it preserves upstream product
-and architecture traceability but does not replace `/to-tickets`.
+and architecture traceability but does not replace `/story-mapping` or
+`/to-tickets`.
 
 Do not interview the user and do not fill gaps with plausible assumptions. If
 required decisions are missing, report the exact gap and route back to the
@@ -134,11 +135,19 @@ negative coverage.
 
 ## Ticket Slicing Guidance
 
-Identify the accepted story-map release slices or walking skeleton that should
-bound user value. Instruct `/to-tickets` to use its existing tracer-bullet
-vertical-slice rules, keep tests inside each slice, and avoid separate frontend,
-backend, database, or test-only horizontal tickets unless a documented wide
-refactor requires expand-contract sequencing.
+Preserve the complete product panorama, but do not silently turn it all into
+first-release work. If the source discussion has already accepted a release
+boundary, record it here. If the resulting Spec is broader than the next
+release needs, hand it to `/story-mapping` for decomposition and user-owned
+arrangement before `/to-tickets`; if it already contains one coherent, bounded
+outcome, `/to-tickets` may follow directly. The release boundary is a product
+prioritization decision, not an implementation estimate.
+
+Instruct `/to-tickets` to use its existing tracer-bullet vertical-slice rules,
+keep tests inside each slice, and avoid separate frontend, backend, database,
+or test-only horizontal tickets unless a documented wide refactor requires
+expand-contract sequencing. A single release may contain multiple vertical
+slices, but they remain separately verifiable execution units.
 
 ## Out of Scope
 
@@ -170,6 +179,7 @@ to review and accept the spec, then use the existing `/to-tickets` skill.
   Use Cases.
 - Do not promote fog, assumptions, rejected options, or candidate architecture
   to accepted decisions.
-- Do not duplicate `/to-tickets` or create implementation tickets here.
+- Do not duplicate `/story-mapping` or `/to-tickets`, and do not create
+  implementation tickets here.
 - Do not introduce another specification framework unless the user separately
   chooses one.

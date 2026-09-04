@@ -149,8 +149,10 @@ instructions equivalent to:
 - Treat the traceability spine as reversible coverage, not a waterfall or a
   fixed ticket list. Keep unsharp questions in Not yet specified.
 - Plan by default; do not implement production work inside this map.
-- Use `/requirements-to-spec` after the readiness checks pass, then use the
-  existing `/to-tickets` for tracer-bullet vertical slices.
+- Use `/requirements-to-spec` after the readiness checks pass. If the
+  resulting Spec is broad enough to need further decomposition and human
+  arrangement, use `/story-mapping`; otherwise go directly to the existing
+  `/to-tickets` for tracer-bullet vertical slices.
 ```
 
 Add repository-specific language, glossary, ADR, safety, and tracker rules from
@@ -202,4 +204,7 @@ questions recoverable without replaying chat history.
 - Do not use a flat story list as a substitute for an end-to-end story map.
 - Do not let infrastructure convenience silently weaken a Must Use Case.
 - Do not place capabilities or data before identifying why they are required.
-- Do not produce implementation tickets; the map ends at an accepted spec.
+- Do not produce implementation tickets or decide the implementation batch;
+  the map ends at an accepted spec. Use `/story-mapping` only when the
+  accepted Spec still needs product decomposition and user-owned arrangement;
+  a small Spec may go directly to `/to-tickets`.

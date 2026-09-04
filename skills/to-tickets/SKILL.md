@@ -16,6 +16,19 @@ The issue tracker contract should have been provided to you — run `/setup-mult
 
 Work from whatever is already in the conversation context. If the user passes a reference (a spec path, an issue number or URL) as an argument, fetch it and read its full body and comments.
 
+The existing Spec/Issue/URL input remains sufficient; a Story Map export is
+optional. If the user also provides a `story-map.json`, read and validate it as
+a scope-and-context supplement, then use its accepted `selectedRelease` as the
+boundary for ticket drafting. Do not silently include cards from other
+releases or the unarranged pool.
+
+When no Story Map JSON is provided, preserve the normal Spec-based workflow.
+If that Spec is too broad to ticket safely, surface the scope problem and ask
+the user to narrow or confirm the intended boundary rather than inventing one.
+When the missing work is decomposition plus human arrangement, recommend
+`/story-mapping`; the user can then arrange the map and return its accepted
+JSON, or explicitly confirm the Spec-only boundary.
+
 ### 2. Explore the codebase (optional)
 
 If you have not already explored the codebase, do so to understand the current state of the code. Ticket titles and descriptions should use the project's domain glossary vocabulary, and respect ADRs in the area you're touching.
@@ -24,11 +37,24 @@ Look for opportunities to prefactor the code to make the implementation easier. 
 
 Load repository guidance and carry forward exact required docs, allowed and
 forbidden paths, module boundaries, data/sync/privacy constraints, validation
-expectations, and human-owned decisions.
+expectations, and human-owned decisions. When a Story Map JSON is supplied,
+load the consuming repository's Story Mapping profile (when present) for
+project-specific vocabulary and extension validation.
 
 ### 3. Draft vertical slices
 
-Break the work into **tracer bullet** tickets.
+Break the requested Spec scope into **tracer bullet** tickets. When a
+`story-map.json` is present, use only the cards in its accepted
+`selectedRelease`; otherwise use the scope established by the Spec and the
+conversation. A single Story Map card may require multiple tickets, and one
+invocation may plan multiple selected slices, but each resulting ticket must
+remain independently verifiable and sized for a single fresh context.
+
+A Story Map card is a product-scope input, not automatically a ticket. Preserve
+its Activity/parent context, card order, source references, dependencies, and
+project-defined `extensions` while creating the execution contracts below.
+Treat map ordering and semantic loop transitions as product context, not
+execution blockers unless codebase exploration confirms a genuine blocker.
 
 <vertical-slice-rules>
 
@@ -40,6 +66,24 @@ Break the work into **tracer bullet** tickets.
 </vertical-slice-rules>
 
 Give each ticket its **blocking edges** — the other tickets that must complete before it can start. A ticket with no blockers can start immediately.
+
+### Optional Story Map JSON input
+
+When supplied, the JSON must identify its source Spec and include an accepted
+arrangement before it can narrow ticket scope:
+
+- `source` — the Spec/Issue reference;
+- `arrangementStatus` — must be `accepted` for automatic scope narrowing;
+- `selectedRelease` — the Release lane to ticket;
+- `activities` and `cards` — the ordered Activity context and selected Story
+  Map cards;
+- `extensions` — optional namespaced project metadata, which must be preserved
+  as context without interpreting unknown namespaces in the generic skill.
+
+If the source does not match, the arrangement is still a draft, or
+`selectedRelease` is missing, stop and ask the user to correct or confirm the
+input. This validation does not remove the ability to run `/to-tickets` from a
+Spec alone.
 
 For boundary-heavy work, load and enforce
 [EXECUTION-CONTRACT.md](./EXECUTION-CONTRACT.md). An incomplete contract blocks
