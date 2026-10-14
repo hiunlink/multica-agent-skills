@@ -1,4 +1,0 @@
-interface:
-  display_name: "Agent Task Intake"
-  short_description: "Route ambiguous or risky agent work."
-  default_prompt: "Use agent-task-intake to choose the smallest correct workflow and name the next concrete action without starting work prematurely."
