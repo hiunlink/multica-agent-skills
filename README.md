@@ -14,6 +14,12 @@ tracker contract to Multica. Its workflow starts with the smallest useful route:
 - `handoff`: transfer live context to another agent or fresh session.
 - `improve-codebase-architecture`: find deepening opportunities and resolve a
   selected candidate with `codebase-design`, `grilling`, and `domain-modeling`.
+- `multi-agent-orchestrator`: compile project, task, and per-run authorization
+  configs into an auditable DAG execution with isolated worktrees and a ledger.
+- `multi-agent-worker`: implement one configured DAG node without widening its
+  ownership or spawning nested agents.
+- `multi-agent-verifier`: independently verify the clean integration result and
+  classify mandatory gates as PASS, FAIL, BLOCKED, or not applicable.
 
 ## Install
 
@@ -34,6 +40,18 @@ npx skills add hiunlink/multica-agent-skills \
   to-spec to-tickets handoff \
   --agent opencode --copy --yes
 ```
+
+Install the reusable multi-agent workflow only:
+
+```bash
+npx skills add hiunlink/multica-agent-skills \
+  --skill multi-agent-orchestrator multi-agent-worker multi-agent-verifier \
+  --agent opencode --copy --yes
+```
+
+The engine deliberately excludes project-specific profiles, task manifests, and
+run authorizations. Keep those as untracked personal files or in another
+location chosen by the consuming project.
 
 Restart the agent runtime after installation so it reloads skill definitions.
 

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.jeff/agent-workflow/run-ledger.schema.json",
+  "title": "Multi-Agent Run Ledger",
+  "type": "object",
+  "required": ["schemaVersion", "taskId", "executionManifest", "baseline", "integration", "nodes", "runs", "gates", "parent"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "taskId": { "type": "string", "minLength": 1 },
+    "executionManifest": { "type": "string", "minLength": 1 },
+    "baseline": { "type": "object" },
+    "integration": { "type": "object" },
+    "nodes": { "type": "object" },
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["runId", "nodeId", "outcome"],
+        "properties": {
+          "runId": { "type": "string", "minLength": 1 },
+          "nodeId": { "type": "string" },
+          "outcome": {
+            "type": ["string", "null"],
+            "enum": ["integrated", "rejected", "blocked", "replaced", "cancelled", "failed", null]
+          },
+          "replacementRunId": { "type": "string" },
+          "retryAuthorizationRef": { "type": "string" }
+        }
+      }
+    },
+    "gates": { "type": "object" },
+    "parent": {
+      "type": "object",
+      "required": ["computedStatus", "closeAuthorized"],
+      "properties": {
+        "computedStatus": { "enum": ["blocked", "review", "done"] },
+        "closeAuthorized": { "type": "boolean" }
+      }
+    }
+  }
+}

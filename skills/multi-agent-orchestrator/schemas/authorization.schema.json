@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.jeff/agent-workflow/authorization.schema.json",
+  "title": "Multi-Agent Run Authorization",
+  "type": "object",
+  "required": ["schemaVersion", "taskId", "template", "authorizationRef", "authorizationPhrase", "authorizedAt", "permissions"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "taskId": { "type": "string", "minLength": 1 },
+    "template": { "type": "boolean" },
+    "authorizationRef": { "type": ["string", "null"] },
+    "authorizationPhrase": { "type": "string", "minLength": 1 },
+    "authorizedAt": { "type": ["string", "null"] },
+    "permissions": {
+      "type": "object",
+      "required": ["productCodeChanges", "trackerWrites", "localCommits", "backendMutation", "push", "mergeToMain", "destructiveLocalReset", "remoteDataReset", "closeTask"],
+      "properties": {
+        "productCodeChanges": { "type": "boolean" },
+        "trackerWrites": { "type": "boolean" },
+        "localCommits": { "type": "boolean" },
+        "backendMutation": { "type": "boolean" },
+        "push": { "type": "boolean" },
+        "mergeToMain": { "type": "boolean" },
+        "destructiveLocalReset": { "type": "boolean" },
+        "remoteDataReset": { "type": "boolean" },
+        "closeTask": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
