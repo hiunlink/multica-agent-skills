@@ -3,10 +3,8 @@
 Multica-first planning skills and an OpenCode task-steward agent.
 
 This collection builds on Matt Pocock's Wayfinder workflow and adapts its issue
-tracker contract to Multica. Its workflow starts with the smallest useful route:
+tracker contract to Multica. Its workflow includes:
 
-- `agent-task-intake`: route ambiguous, risky, or long-running work.
-- `issue-workspace`: preserve one small unresolved discussion.
 - `wayfinder`: map and resolve a multi-session field of decisions.
 - `to-spec`: synthesize settled decisions into a durable spec.
 - `to-tickets`: produce executable vertical slices with explicit blockers and
@@ -32,12 +30,11 @@ npx skills add hiunlink/multica-agent-skills \
 
 Add `--global` to install at user scope rather than in the current project.
 
-Install only the core workflow:
+Install only the core planning workflow:
 
 ```bash
 npx skills add hiunlink/multica-agent-skills \
-  --skill agent-task-intake setup-multica-skills issue-workspace wayfinder \
-  to-spec to-tickets handoff \
+  --skill setup-multica-skills wayfinder to-spec to-tickets handoff \
   --agent opencode --copy --yes
 ```
 

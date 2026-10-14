@@ -61,6 +61,26 @@
             "automaticRetry": { "const": false },
             "failurePolicy": { "const": "stop-and-ask" }
           }
+        },
+        "review": {
+          "type": "object",
+          "properties": {
+            "defaultMode": { "enum": ["receipt", "independent", "cross-model"] },
+            "riskModes": {
+              "type": "object",
+              "required": ["low", "medium", "high"],
+              "properties": {
+                "low": { "enum": ["receipt", "independent", "cross-model"] },
+                "medium": { "enum": ["receipt", "independent", "cross-model"] },
+                "high": { "enum": ["receipt", "independent", "cross-model"] }
+              }
+            },
+            "integrationReviewForRisk": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "enum": ["low", "medium", "high"] }
+            }
+          }
         }
       }
     },

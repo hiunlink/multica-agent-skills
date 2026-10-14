@@ -2,10 +2,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { atomicWriteJson, executeRuntimeCommand, RUNTIME_COMMANDS } from './workflow-runtime.mjs';
 
 const STATUS = new Set(['PENDING', 'RUNNING', 'PASS', 'FAIL', 'BLOCKED']);
 const GATE_STATUS = new Set(['PENDING', 'PASS', 'FAIL', 'BLOCKED', 'NOT_APPLICABLE']);
 const RUN_OUTCOMES = new Set(['integrated', 'rejected', 'blocked', 'replaced', 'cancelled', 'failed']);
+const RISKS = new Set(['low', 'medium', 'high']);
+const REVIEW_MODES = new Set(['receipt', 'independent', 'cross-model']);
 
 function fail(message) {
   console.error(`ERROR: ${message}`);
@@ -14,8 +17,8 @@ function fail(message) {
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  if (!command) fail('缺少命令：scaffold-task | scaffold-authorization | validate | compile | init-ledger | validate-ledger | report');
-  const args = { command, final: false };
+  if (!command) fail('缺少命令：scaffold-task | scaffold-authorization | validate | compile | init-ledger | validate-ledger | report | status | ready | resume | baseline-set | integration-set | run-start | run-finish | node-output | test-record | review-record | gate-set | inbox-push | inbox-drain | feedback-record');
+  const args = { subcommand: command, final: false };
   for (let i = 0; i < rest.length; i += 1) {
     const token = rest[i];
     if (token === '--final') {
@@ -51,8 +54,7 @@ function readJson(file) {
 }
 
 function writeJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+  atomicWriteJson(file, value);
 }
 
 function nonEmpty(value, label, errors) {
@@ -128,10 +130,22 @@ function validateProject(project, source) {
   if (!Number.isInteger(maxParallel) || maxParallel < 1) {
     errors.push(`${source}: policy.delegation.maxParallel 必须为正整数`);
   }
+  const review = project.policy?.review;
+  if (review != null) {
+    if (review.defaultMode != null && !REVIEW_MODES.has(review.defaultMode)) errors.push(`${source}: policy.review.defaultMode 非法`);
+    if (review.riskModes != null) for (const risk of RISKS) {
+      if (!REVIEW_MODES.has(review.riskModes?.[risk])) errors.push(`${source}: policy.review.riskModes.${risk} 非法`);
+    }
+    if (review.integrationReviewForRisk != null) {
+      for (const risk of stringArray(review.integrationReviewForRisk, `${source}: policy.review.integrationReviewForRisk`, errors)) {
+        if (!RISKS.has(risk)) errors.push(`${source}: integrationReviewForRisk 包含非法风险：${risk}`);
+      }
+    }
+  }
   return errors;
 }
 
-function validateTask(taskDoc, project, source) {
+function validateTask(taskDoc, project, source, { forCompile = false } = {}) {
   const errors = [];
   if (taskDoc.schemaVersion !== 1) errors.push(`${source}: schemaVersion 必须为 1`);
   const task = taskDoc.task;
@@ -162,8 +176,37 @@ function validateTask(taskDoc, project, source) {
     stringArray(node.owns, `${label}.owns`, errors);
     stringArray(node.excludes, `${label}.excludes`, errors);
     stringArray(node.acceptance, `${label}.acceptance`, errors, { allowEmpty: false });
+    if (node.risk != null && !RISKS.has(node.risk)) errors.push(`${label}.risk 必须为 low | medium | high`);
+    if (node.review != null) {
+      if (!REVIEW_MODES.has(node.review.mode)) errors.push(`${label}.review.mode 非法`);
+      if (node.review.batch != null) nonEmpty(node.review.batch, `${label}.review.batch`, errors);
+      const requiredMode = project.policy?.review?.riskModes?.[node.risk];
+      const rank = { receipt: 0, independent: 1, 'cross-model': 2 };
+      if (requiredMode && rank[node.review.mode] < rank[requiredMode]) {
+        errors.push(`${label}.review.mode=${node.review.mode} 低于 ${node.risk} 风险要求 ${requiredMode}`);
+      }
+    }
+    if (node.dependencyInputs != null) {
+      if (!Array.isArray(node.dependencyInputs)) errors.push(`${label}.dependencyInputs 必须为数组`);
+      else for (const [inputIndex, input] of node.dependencyInputs.entries()) {
+        nonEmpty(input.node, `${label}.dependencyInputs[${inputIndex}].node`, errors);
+        stringArray(input.requiredOutputs, `${label}.dependencyInputs[${inputIndex}].requiredOutputs`, errors, { allowEmpty: false });
+      }
+    }
+    if (node.behavioralProofs != null) {
+      if (!Array.isArray(node.behavioralProofs)) errors.push(`${label}.behavioralProofs 必须为数组`);
+      else for (const [proofIndex, proof] of node.behavioralProofs.entries()) {
+        nonEmpty(proof.id, `${label}.behavioralProofs[${proofIndex}].id`, errors);
+        nonEmpty(proof.scenario, `${label}.behavioralProofs[${proofIndex}].scenario`, errors);
+        nonEmpty(proof.test, `${label}.behavioralProofs[${proofIndex}].test`, errors);
+        if (typeof proof.mandatory !== 'boolean') errors.push(`${label}.behavioralProofs[${proofIndex}].mandatory 必须为 boolean`);
+      }
+    }
     for (const bundle of stringArray(node.contextBundles ?? [], `${label}.contextBundles`, errors)) {
       if (!project.contextBundles?.[bundle]) errors.push(`${label}: 未知 context bundle ${bundle}`);
+    }
+    if (forCompile && (node.acceptance ?? []).some((value) => /\bTODO\b/i.test(value))) {
+      errors.push(`${label}.acceptance 仍含 TODO，占位配置不可 compile`);
     }
     if (!Array.isArray(node.tests)) {
       errors.push(`${label}.tests 必须为数组`);
@@ -175,6 +218,7 @@ function validateTask(taskDoc, project, source) {
         if (testNames.has(test.name)) errors.push(`${label}: 重复 test name ${test.name}`);
         testNames.add(test.name);
         if (typeof test.mandatory !== 'boolean') errors.push(`${label}.tests[${testIndex}].mandatory 必须为 boolean`);
+        if (forCompile && /\bTODO\b/i.test(test.command ?? '')) errors.push(`${label}.tests[${testIndex}].command 仍含 TODO，占位配置不可 compile`);
       }
     }
   }
@@ -184,6 +228,29 @@ function validateTask(taskDoc, project, source) {
       if (!ids.has(dependency)) errors.push(`${source}: node ${node.id} 依赖未知 node ${dependency}`);
       if (dependency === node.id) errors.push(`${source}: node ${node.id} 不得依赖自身`);
     }
+    for (const input of node.dependencyInputs ?? []) {
+      if (!node.dependsOn?.includes(input.node)) errors.push(`${source}: node ${node.id} 的 dependencyInputs 引用了非依赖 node ${input.node}`);
+    }
+    const testNames = new Set((node.tests ?? []).map((test) => test.name));
+    for (const proof of node.behavioralProofs ?? []) {
+      if (!testNames.has(proof.test)) errors.push(`${source}: node ${node.id} behavioral proof ${proof.id} 引用了未知 test ${proof.test}`);
+    }
+  }
+  const pilotNode = task.execution?.scheduling?.pilotNode;
+  if (pilotNode != null && !ids.has(pilotNode)) errors.push(`${source}: pilotNode 引用了未知 node ${pilotNode}`);
+  const schedulingMode = task.execution?.scheduling?.mode;
+  if (schedulingMode != null && !['stage-batch', 'rolling-window'].includes(schedulingMode)) {
+    errors.push(`${source}: execution.scheduling.mode 必须为 stage-batch | rolling-window`);
+  }
+  const integrationReviewMode = task.verification?.integrationReview?.mode;
+  if (integrationReviewMode != null && !['none', ...REVIEW_MODES].includes(integrationReviewMode)) {
+    errors.push(`${source}: verification.integrationReview.mode 非法`);
+  }
+  const integrationReviewRisks = project.policy?.review?.integrationReviewForRisk ?? [];
+  const needsIntegrationReview = task.nodes.some((node) => integrationReviewRisks.includes(node.risk));
+  if (needsIntegrationReview &&
+      (task.verification?.integrationReview?.required !== true || integrationReviewMode === 'none')) {
+    errors.push(`${source}: 高风险策略要求 integration product review`);
   }
 
   const visiting = new Set();
@@ -258,7 +325,7 @@ function loadAndValidate(args, { requireAuthorization = false, forCompile = fals
   const taskFile = requireArg(args, 'task');
   const project = readJson(projectFile);
   const taskDoc = readJson(taskFile);
-  let errors = [...validateProject(project, projectFile), ...validateTask(taskDoc, project, taskFile)];
+  let errors = [...validateProject(project, projectFile), ...validateTask(taskDoc, project, taskFile, { forCompile })];
   let authorization = null;
   let authorizationFile = null;
   if (args.authorization) {
@@ -307,6 +374,8 @@ function scaffoldTask(args) {
   if (errors.length > 0) fail(`Project 校验失败：\n- ${errors.join('\n- ')}`);
   const bundle = project.contextBundles.default ? 'default' : Object.keys(project.contextBundles)[0];
   const typecheck = project.commands?.typecheck ?? 'TODO: add focused validation command';
+  const defaultRisk = 'medium';
+  const integrationReviewRequired = (project.policy?.review?.integrationReviewForRisk ?? ['high']).includes(defaultRisk);
   const taskDoc = {
     schemaVersion: 1,
     task: {
@@ -317,20 +386,35 @@ function scaffoldTask(args) {
       contextBundles: [bundle],
       execution: {
         authorizationPhrase: `开始执行 ${taskId} 多 Agent 工作流`,
-        reportLanguage: project.reporting?.language ?? project.project.language
+        reportLanguage: project.reporting?.language ?? project.project.language,
+        scheduling: { mode: 'rolling-window', pilotNode: 'implementation' }
       },
       stages: [{ id: 'stage-1', maxParallel: 1, nodes: ['implementation'] }],
       nodes: [{
         id: 'implementation',
         title,
         role: 'implementation',
+        risk: defaultRisk,
+        review: { mode: project.policy?.review?.riskModes?.[defaultRisk] ?? 'independent', batch: null },
         dependsOn: [],
+        dependencyInputs: [],
         contextBundles: [bundle],
         owns: [],
         excludes: [],
         acceptance: ['TODO: 写入可验证的行为验收标准'],
-        tests: [{ name: 'typecheck', command: typecheck, mandatory: true }]
+        behavioralProofs: [{ id: 'primary-behavior', scenario: 'TODO: 描述真实行为而非代理指标', test: 'primary-behavior', mandatory: true }],
+        tests: [
+          { name: 'typecheck', command: typecheck, mandatory: true },
+          { name: 'primary-behavior', command: 'TODO: add a real behavior or runtime probe command', mandatory: true }
+        ]
       }],
+      verification: {
+        bindToIntegrationCommit: true,
+        integrationReview: {
+          mode: integrationReviewRequired ? (project.policy?.review?.riskModes?.[defaultRisk] ?? 'independent') : 'none',
+          required: integrationReviewRequired
+        }
+      },
       environmentGates: [{ id: 'automated-tests', title: '自动化测试与静态检查', mandatory: true }]
     }
   };
@@ -389,6 +473,30 @@ function compile(args) {
   console.log(`PASS: 已生成 execution manifest：${output}`);
 }
 
+function effectiveReviewMode(manifest, node) {
+  if (node.review?.mode) return node.review.mode;
+  const risk = node.risk ?? 'medium';
+  return manifest.project?.policy?.review?.riskModes?.[risk] ?? 'independent';
+}
+
+function hasStaleEvidence(manifest, ledger) {
+  if (manifest.task?.verification?.bindToIntegrationCommit !== true) return false;
+  for (const node of manifest.task.nodes) {
+    const actual = ledger.nodes?.[node.id];
+    const commit = actual?.commits?.at(-1);
+    if (!actual || !commit) continue;
+    if ((actual.tests ?? []).some((test) => test.status === 'PASS' && test.verifiedCommit !== commit)) return true;
+    if (effectiveReviewMode(manifest, node) !== 'receipt' && actual.review?.status === 'PASS' &&
+        actual.review.verifiedCommit !== commit) return true;
+  }
+  const commit = ledger.integration?.commit;
+  if (!commit) return false;
+  const integrationReview = manifest.task.verification?.integrationReview;
+  if (integrationReview?.required === true && integrationReview.mode !== 'none' &&
+      ledger.integration?.review?.status === 'PASS' && ledger.integration.review.verifiedCommit !== commit) return true;
+  return Object.values(ledger.gates ?? {}).some((gate) => gate.status === 'PASS' && gate.verifiedCommit !== commit);
+}
+
 function initLedger(args) {
   const manifestFile = requireArg(args, 'manifest');
   const output = requireArg(args, 'output');
@@ -407,14 +515,29 @@ function initLedger(args) {
       lockfileSha256: null,
       rawLog: null
     },
-    integration: { worktree: null, branch: null, commit: null, clean: null },
-    nodes: Object.fromEntries(manifest.task.nodes.map((node) => [node.id, {
-      status: 'PENDING', issueId: null, worktree: null, branch: null, baseCommit: null,
-      commits: [], runs: [], tests: [], review: { status: 'PENDING', report: null }
-    }])),
+    integration: {
+      worktree: null, branch: null, commit: null, clean: null,
+      review: {
+        status: manifest.task.verification?.integrationReview?.mode === 'none' ? 'NOT_APPLICABLE' : 'PENDING',
+        mode: manifest.task.verification?.integrationReview?.mode ?? 'none', report: null, verifiedCommit: null
+      }
+    },
+    nodes: Object.fromEntries(manifest.task.nodes.map((node) => {
+      const reviewMode = effectiveReviewMode(manifest, node);
+      return [node.id, {
+        status: 'PENDING', issueId: null, worktree: null, branch: null, baseCommit: null,
+        commits: [], runs: [], tests: [], outputs: {},
+        review: {
+          status: reviewMode === 'receipt' ? 'NOT_APPLICABLE' : 'PENDING',
+          mode: reviewMode, report: null, verifiedCommit: null
+        }
+      }];
+    })),
     runs: [],
+    inbox: [],
+    retrospective: { evidence: [], findings: [] },
     gates: Object.fromEntries((manifest.task.environmentGates ?? []).map((gate) => [gate.id, {
-      status: 'PENDING', mandatory: gate.mandatory, evidence: null, blocker: null
+      status: 'PENDING', mandatory: gate.mandatory, evidence: null, blocker: null, verifiedCommit: null
     }])),
     parent: { computedStatus: 'blocked', closeAuthorized: manifest.authorization?.permissions?.closeTask === true },
     notes: []
@@ -425,11 +548,31 @@ function initLedger(args) {
 
 function computeParentStatus(manifest, ledger) {
   const nodeStatuses = manifest.task.nodes.map((node) => ledger.nodes?.[node.id]?.status ?? 'PENDING');
+  const nodeEvidenceStatuses = manifest.task.nodes.map((node) => {
+    const actual = ledger.nodes?.[node.id];
+    const mandatoryNames = new Set([
+      ...node.tests.filter((test) => test.mandatory).map((test) => test.name),
+      ...(node.behavioralProofs ?? []).filter((proof) => proof.mandatory).map((proof) => proof.test)
+    ]);
+    return node.tests.filter((test) => mandatoryNames.has(test.name)).every((test) => {
+      const result = (actual?.tests ?? []).find((item) => item.name === test.name && item.command === test.command);
+      return result?.status === 'PASS' && result.exitCode === 0;
+    });
+  });
+  const reviewStatuses = manifest.task.nodes
+    .filter((node) => effectiveReviewMode(manifest, node) !== 'receipt')
+    .map((node) => ledger.nodes?.[node.id]?.review?.status ?? 'PENDING');
   const mandatoryGateStatuses = (manifest.task.environmentGates ?? [])
     .filter((gate) => gate.mandatory)
     .map((gate) => ledger.gates?.[gate.id]?.status ?? 'PENDING');
+  const integrationReview = manifest.task.verification?.integrationReview;
+  const integrationReviewBlocked = integrationReview?.required === true && integrationReview.mode !== 'none' &&
+    ledger.integration?.review?.status !== 'PASS';
   const blocked = nodeStatuses.some((status) => status !== 'PASS') ||
-    mandatoryGateStatuses.some((status) => !['PASS', 'NOT_APPLICABLE'].includes(status));
+    nodeEvidenceStatuses.some((passed) => !passed) ||
+    reviewStatuses.some((status) => status !== 'PASS') ||
+    mandatoryGateStatuses.some((status) => !['PASS', 'NOT_APPLICABLE'].includes(status)) ||
+    integrationReviewBlocked || hasStaleEvidence(manifest, ledger);
   if (blocked) return 'blocked';
   return manifest.authorization?.permissions?.closeTask === true ? 'done' : 'review';
 }
@@ -449,7 +592,11 @@ function validateLedgerDocument(manifest, ledger, source, final) {
     if (!STATUS.has(actual.status)) errors.push(`${source}: node ${node.id} status 非法：${actual.status}`);
     if (final && actual.status !== 'PASS') errors.push(`${source}: final 时 node ${node.id}=${actual.status}`);
     if (actual.status === 'PASS') {
-      for (const test of node.tests.filter((item) => item.mandatory)) {
+      const mandatoryTestNames = new Set([
+        ...node.tests.filter((item) => item.mandatory).map((item) => item.name),
+        ...(node.behavioralProofs ?? []).filter((proof) => proof.mandatory).map((proof) => proof.test)
+      ]);
+      for (const test of node.tests.filter((item) => mandatoryTestNames.has(item.name))) {
         const result = (actual.tests ?? []).find((item) => item.name === test.name && item.command === test.command);
         if (!result) {
           errors.push(`${source}: node ${node.id} 缺少 mandatory test ${test.name}`);
@@ -460,6 +607,28 @@ function validateLedgerDocument(manifest, ledger, source, final) {
           errors.push(`${source}: node ${node.id} test ${test.name} 缺少测试计数`);
         }
         nonEmpty(result.rawLog, `${source}: node ${node.id} test ${test.name}.rawLog`, errors);
+        if (final && manifest.task.verification?.bindToIntegrationCommit === true) {
+          nonEmpty(result.verifiedCommit, `${source}: node ${node.id} test ${test.name}.verifiedCommit`, errors);
+          const nodeCommit = actual.commits?.at(-1);
+          if (nodeCommit && result.verifiedCommit !== nodeCommit) {
+            errors.push(`${source}: node ${node.id} test ${test.name} 证据已过期：${result.verifiedCommit} != ${nodeCommit}`);
+          }
+        }
+      }
+      for (const input of node.dependencyInputs ?? []) {
+        for (const key of input.requiredOutputs ?? []) {
+          nonEmpty(ledger.nodes?.[input.node]?.outputs?.[key], `${source}: node ${node.id} dependency ${input.node}.${key}`, errors);
+        }
+      }
+      const reviewMode = effectiveReviewMode(manifest, node);
+      if (reviewMode !== 'receipt') {
+        if (actual.review?.status !== 'PASS') errors.push(`${source}: node ${node.id} ${reviewMode} review 未 PASS`);
+        if (final && manifest.task.verification?.bindToIntegrationCommit === true) {
+          const nodeCommit = actual.commits?.at(-1);
+          if (nodeCommit && actual.review?.verifiedCommit !== nodeCommit) {
+            errors.push(`${source}: node ${node.id} review 证据已过期`);
+          }
+        }
       }
     }
   }
@@ -491,6 +660,10 @@ function validateLedgerDocument(manifest, ledger, source, final) {
     if (['PASS', 'FAIL', 'BLOCKED', 'NOT_APPLICABLE'].includes(actual.status)) {
       nonEmpty(actual.evidence ?? actual.blocker, `${source}: gate ${gate.id} evidence/blocker`, errors);
     }
+    if (final && gate.mandatory && manifest.task.verification?.bindToIntegrationCommit === true &&
+        actual.status === 'PASS' && actual.verifiedCommit !== ledger.integration?.commit) {
+      errors.push(`${source}: gate ${gate.id} 证据未绑定当前 integration commit`);
+    }
   }
 
   const computed = computeParentStatus(manifest, ledger);
@@ -499,6 +672,14 @@ function validateLedgerDocument(manifest, ledger, source, final) {
   }
   if (final && !ledger.integration?.commit) errors.push(`${source}: final 时缺少 integration.commit`);
   if (final && ledger.integration?.clean !== true) errors.push(`${source}: final 时 integration.clean 必须为 true`);
+  const integrationReview = manifest.task.verification?.integrationReview;
+  if (final && integrationReview?.required === true && integrationReview.mode !== 'none') {
+    if (ledger.integration?.review?.status !== 'PASS') errors.push(`${source}: integration product review 未 PASS`);
+    if (manifest.task.verification?.bindToIntegrationCommit === true &&
+        ledger.integration?.review?.verifiedCommit !== ledger.integration?.commit) {
+      errors.push(`${source}: integration review 证据未绑定当前 integration commit`);
+    }
+  }
   return { errors, computed };
 }
 
@@ -522,7 +703,7 @@ function report(args) {
   if (errors.length > 0) fail(`生成报告前 ledger 无效：\n- ${errors.join('\n- ')}`);
   const nodeRows = manifest.task.nodes.map((node) => {
     const actual = ledger.nodes[node.id];
-    return `| ${node.id} | ${node.title} | ${actual.status} | ${(actual.commits ?? []).join(', ') || '—'} |`;
+    return `| ${node.id} | ${node.title} | ${node.risk ?? 'legacy'} | ${effectiveReviewMode(manifest, node)} | ${actual.review?.status ?? '—'} | ${actual.status} | ${(actual.commits ?? []).join(', ') || '—'} |`;
   });
   const gateRows = (manifest.task.environmentGates ?? []).map((gate) => {
     const actual = ledger.gates[gate.id];
@@ -537,13 +718,24 @@ function report(args) {
     `- 集成提交：${ledger.integration?.commit ?? '—'}`,
     `- 建议父状态：${computed}`,
     '', '## Node 结果', '',
-    '| Node | 目标 | 状态 | Commit |', '|---|---|---|---|', ...nodeRows,
+    '| Node | 目标 | 风险 | Review mode | Review | 状态 | Commit |', '|---|---|---|---|---|---|---|', ...nodeRows,
+    '', '## 集成审查', '',
+    `- Mode：${ledger.integration?.review?.mode ?? 'none'}`,
+    `- 状态：${ledger.integration?.review?.status ?? '—'}`,
+    `- 证据提交：${ledger.integration?.review?.verifiedCommit ?? '—'}`,
+    `- 报告：${ledger.integration?.review?.report ?? '—'}`,
     '', '## 强制门禁', '',
     '| Gate | 目标 | 状态 | 证据/阻塞 |', '|---|---|---|---|', ...gateRows,
     '', '## 非成功 Agent 运行', ''
   ];
   if (failedRuns.length === 0) lines.push('- 无');
   else for (const run of failedRuns) lines.push(`- ${run.runId} / ${run.nodeId ?? 'unknown'}：${run.outcome}；${run.error ?? run.reason ?? '无说明'}`);
+  lines.push('', '## 复盘分类', '');
+  const findings = ledger.retrospective?.findings ?? [];
+  if (findings.length === 0) lines.push('- 无');
+  else for (const finding of findings) {
+    lines.push(`- ${finding.class}：${finding.scope} / ${finding.decision}；证据 ${finding.evidence}；执行机制 ${finding.enforcement ?? '—'}`);
+  }
   lines.push('', '## 权限边界', '');
   for (const [key, value] of Object.entries(manifest.authorization.permissions)) lines.push(`- ${key}: ${value}`);
   lines.push('');
@@ -553,7 +745,15 @@ function report(args) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-switch (args.command) {
+if (RUNTIME_COMMANDS.has(args.subcommand)) {
+  try {
+    executeRuntimeCommand(args, (message) => { throw new Error(message); });
+  } catch (error) {
+    fail(error.message);
+  }
+  process.exit(0);
+}
+switch (args.subcommand) {
   case 'scaffold-task': scaffoldTask(args); break;
   case 'scaffold-authorization': scaffoldAuthorization(args); break;
   case 'validate': {
@@ -565,5 +765,5 @@ switch (args.command) {
   case 'init-ledger': initLedger(args); break;
   case 'validate-ledger': validateLedger(args); break;
   case 'report': report(args); break;
-  default: fail(`未知命令：${args.command}`);
+  default: fail(`未知命令：${args.subcommand}`);
 }

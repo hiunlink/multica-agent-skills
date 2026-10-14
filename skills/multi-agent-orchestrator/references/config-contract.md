@@ -34,6 +34,8 @@
 - `contextBundles.<name>` 只含 document key；不得嵌套 bundle，保持解析确定性。
 - repository 必须声明 `writable`；只读仓库不得被 worker ownership 引用。
 - `policy.delegation.automaticRetry` 必须为 `false`，`nestedDelegates` 必须为 `false`。
+- 可选 `policy.review.riskModes` 将 `low | medium | high` 映射到 `receipt | independent | cross-model`；旧 profile 缺失时保守使用 `independent`。
+- `policy.review.integrationReviewForRisk` 声明哪些风险等级需要最终集成产品审查。
 
 ## Task manifest
 
@@ -45,15 +47,44 @@
     "projectId": "...",
     "authority": {},
     "contextBundles": [],
-    "execution": { "authorizationPhrase": "..." },
+    "execution": {
+      "authorizationPhrase": "...",
+      "scheduling": { "mode": "rolling-window", "pilotNode": "A" }
+    },
     "stages": [],
     "nodes": [],
+    "verification": {
+      "bindToIntegrationCommit": true,
+      "integrationReview": { "mode": "cross-model", "required": true }
+    },
     "environmentGates": []
   }
 }
 ```
 
-每个 node 必须有唯一 `id`、`title`、`role`、`dependsOn`、`owns`、`excludes`、`acceptance`、`tests`。依赖必须存在且无环。Stage 只引用已定义 node。
+每个 node 必须有唯一 `id`、`title`、`role`、`dependsOn`、`owns`、`excludes`、`acceptance`、`tests`。依赖必须存在且无环。Stage 只引用已定义 node。`scaffold-task` 生成的 `TODO` 只是编辑提示；`compile` 会拒绝仍含 `TODO` 的 acceptance 或 test command。
+
+v0.2 可选字段：
+
+```json
+{
+  "risk": "high",
+  "review": { "mode": "cross-model", "batch": null },
+  "dependencyInputs": [
+    { "node": "A", "requiredOutputs": ["contract", "decisionSummary"] }
+  ],
+  "behavioralProofs": [
+    {
+      "id": "restart-after-local-change",
+      "scenario": "本地变更持久化后重启，待提交候选仍可重建",
+      "test": "restart-integration",
+      "mandatory": true
+    }
+  ]
+}
+```
+
+`dependsOn` 不只表示顺序；`dependencyInputs` 声明下游 brief 必须接收的具名输出。`behavioralProofs` 引用 `tests[].name`，强制把 acceptance 映射到真实行为或负向状态转换。
 
 Ownership 使用项目根目录相对路径或 glob。运行时由 orchestrator 把它转换为 worker 的精确 allowlist；配置本身不授权修改。
 
@@ -93,7 +124,20 @@ Ownership 使用项目根目录相对路径或 glob。运行时由 orchestrator 
 }
 ```
 
-Ledger 必须按 `name + command` 记录身份、exit code、测试总数、失败数和 raw log 路径。
+Ledger 必须按 `name + command` 记录身份、exit code、测试总数、失败数、raw log 路径和 `verifiedCommit`。
+
+## Review 与最终证据
+
+- `receipt` 不启动 Reviewer，但 orchestrator 必须机械核对 diff、ownership、commit 和测试 receipt；
+- `independent` 启动只读 Reviewer；同一 `review.batch` 可批量审查中风险 node；
+- `cross-model` 用于高风险节点或 integration product review；
+- `verification.bindToIntegrationCommit=true` 时，node test/review 绑定 node commit，integration review/gate 绑定 integration commit；代码变化后旧证据派生为 stale，并使 parent 保持 `blocked`。
+
+## Run ledger mutation
+
+运行期不得直接编辑 ledger。使用 [运行时状态命令](runtime-commands.md) 记录 baseline、run、dependency output、test、review、gate、inbox 和 retrospective。脚本使用 PID lock、stale-lock 恢复、临时文件与原子 rename。
+
+Close 阶段的 feedback finding 必须分类为 `engine | project | task | product | rejected`，并给出 `accepted | rejected | backlog`；记录本身不授权修改 Skill、项目或 tracker。
 
 ## 状态计算
 

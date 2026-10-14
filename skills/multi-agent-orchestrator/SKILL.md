@@ -12,7 +12,7 @@ description: "使用个人 project profile、task manifest 和单次授权配置
 - **目的**：从三个独立配置生成可审计执行 manifest，并按任务 DAG 驱动隔离实现、审查和验证。
 - **触发**：用户明确要求执行某个 task manifest，并提供该任务规定的 fresh authorization。
 - **输入**：project profile、task manifest、run authorization。
-- **输出**：execution manifest、run ledger、隔离 commits、验证证据、中文报告和状态建议。
+- **输出**：execution manifest、原子更新的 run ledger、隔离 commits、commit-bound 验证证据、中文报告和派生状态建议。
 - **边界**：不替用户创造产品决策；不从历史授权推断当前权限；不把不可用环境伪装成 PASS。
 - **Handoff**：worker 返回 commit 与具名证据；orchestrator 审查后集成；verifier 只读给出 PASS/FAIL/BLOCKED。
 - **语言**：面向人的 tracker 内容和 Markdown 默认取 project profile 的语言；代码符号、路径、命令、commit、测试名及原始错误保持原文。
@@ -76,13 +76,25 @@ node scripts/workflow.mjs validate-ledger \
   --ledger <run-ledger.json> \
   [--final]
 
+node scripts/workflow.mjs status \
+  --manifest <execution-manifest.json> \
+  --ledger <run-ledger.json>
+
+node scripts/workflow.mjs ready \
+  --manifest <execution-manifest.json> \
+  --ledger <run-ledger.json>
+
+node scripts/workflow.mjs resume \
+  --manifest <execution-manifest.json> \
+  --ledger <run-ledger.json>
+
 node scripts/workflow.mjs report \
   --manifest <execution-manifest.json> \
   --ledger <run-ledger.json> \
   --output <report.zh-CN.md>
 ```
 
-从本 Skill 目录解析相对脚本路径。配置使用 JSON，原因是本机没有稳定的 YAML parser；JSON 可确定性校验，避免隐式类型和额外运行时依赖。
+完整 mutation 接口见 [运行时状态命令](references/runtime-commands.md)。运行期不得直接编辑 ledger。配置使用 JSON，原因是本机没有稳定的 YAML parser；JSON 可确定性校验，避免隐式类型和额外运行时依赖。
 
 ## 执行流程
 
@@ -106,10 +118,12 @@ node scripts/workflow.mjs report \
 ### 3. 创建执行图
 
 - task node 的 `dependsOn` 决定 DAG；不得按名称猜依赖。
+- `dependencyInputs.requiredOutputs` 把依赖定义为 context relay；缺少 output 时下游不得完成。
 - `owns` 是允许修改范围；`excludes` 是硬禁止范围。
-- context 只从 node 的 bundle 加载，避免每个 Agent 重读整个项目。
+- context 只从 node 的 bundle 和具名 dependency outputs 加载，避免每个 Agent 重读整个项目。
 - 每个 implementation node 使用独立 worktree/branch；共享接线使用 task 指定的串行 integration node。
-- 并行度不得超过 project policy 和 task stage 的较小值。
+- 先执行 `pilotNode`，完整验证 brief、合同和证据方法后才开放同 stage 的其他 node。
+- 使用 rolling window：一个 slot 释放才补充一个 ready node；并行度不得超过 project policy 和 task stage 的较小值。
 
 ### 4. 委派
 
@@ -131,12 +145,24 @@ node scripts/workflow.mjs report \
 - 保留失败输出、partial artifact、runId 和继续成本并报告用户。
 - 只有用户看到证据后明确授权，才允许新 run；ledger 必须记录 `retryAuthorizationRef`。
 - 不使用固定长 `sleep`；异步 wait 只调用一次，未完成则做其他可独立工作并等待通知。
+- Delegate 完成通知先写入 inbox，再单次 drain 并逐个归类；未归类 run 会阻止 final。
+- `resume` 只计算恢复点，不自动 resume、重派或补跑。
 
 ### 6. Review 与验证
 
-Reviewer 输入遵循 [最小审查包](references/review-packet.md)：先读目标 diff 和直接证据，扩大范围必须说明原因。Reviewer 不修改代码。
+所有 Worker 都必须自证，但不是每个 Worker 都启动 Reviewer：
 
-Verifier 在 clean integration worktree 中运行 task 定义的 mandatory gates；缺少真实环境、账号、设备或破坏性授权时标 BLOCKED，不降级为本地 mock PASS。
+- `receipt`：orchestrator 机械核对 ownership、commit、具名测试和 raw log；
+- `independent`：独立只读 Reviewer；同一 seam 的中风险 node 可共享 batch；
+- `cross-model`：高风险 node 使用不同模型家族审查；
+- 高风险 task 在 integration commit 上增加一次整体产品闭环 Review，寻找 acceptance 缺口和跨模块状态转换风险；
+- 最后只运行一次 clean-integration Verifier，证明已确认的 acceptance/gates。
+
+Reviewer 输入遵循 [最小审查包](references/review-packet.md)。Review 负责挑战合同完整性；Verifier 负责执行已确认门禁，两者不可用“测试全绿”互相替代。
+
+`behavioralProofs` 必须描述真实行为或负向状态转换，并引用具名 test。启用 `bindToIntegrationCommit` 后，node 证据绑定 node commit，integration review/gate 绑定 integration commit；commit 改变后旧证据自动视为过期。
+
+Verifier 缺少真实环境、账号、设备或破坏性授权时标 BLOCKED，不降级为本地 mock PASS。
 
 ### 7. 状态与报告
 
@@ -145,6 +171,15 @@ Verifier 在 clean integration worktree 中运行 task 定义的 mandatory gates
 - 仅当全部通过且 `closeAuthorized=true` 才可建议 `done`；
 - tracker mutation 必须在 ledger final 校验后发生；
 - 报告必须由 `workflow.mjs report` 生成。
+- ledger 使用 PID lock、stale-lock 恢复和原子 rename；所有状态 mutation 经脚本命令。
+
+### 8. Close 与反馈闭环
+
+1. 从 ledger 派生运行时间、失败/replacement、review round、过期证据与环境 blocker；
+2. 对用户指定的 session/report 逐项分类为 `engine | project | task | product | rejected`；
+3. 每项给出 `accepted | rejected | backlog`，但不得自动修改 Skill、项目规范或 tracker；
+4. 一般错误类别至少重复两次才进入 engine；授权绕过、错误关闭或数据破坏等严重安全问题可单次升级；
+5. 优先用架构、类型、lint 或可失败的测试执行规则，最后才写提示词。
 
 ## Tracker adapter
 
@@ -158,9 +193,10 @@ Verifier 在 clean integration worktree 中运行 task 定义的 mandatory gates
   → compile execution manifest
   → init run ledger + freeze baseline
   → resolve context bundles
-  → execute DAG with isolated workers
-  → bounded review packet
-  → independent verifier
+  → pilot then rolling-window DAG
+  → risk-based node review packets
+  → high-risk integration product review
+  → one clean-integration verifier
   → validate final ledger
   → generate Chinese report
   → recommend blocked/review/done
